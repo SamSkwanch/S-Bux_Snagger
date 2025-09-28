@@ -1,0 +1,8 @@
+- [ ] Clarify Project Requirements: Python automation tool for Pixel Starships S-Bux collection, using image recognition and mouse automation.
+- [x] Scaffold the Project: Project directories and README created.
+- [ ] Customize the Project: Pending code implementation.
+- [ ] Install Required Extensions: None required.
+- [ ] Compile the Project: Pending after code implementation.
+- [ ] Create and Run Task: Pending after code implementation.
+- [ ] Launch the Project: Pending after code implementation.
+- [ ] Ensure Documentation is Complete: README created, will update as needed.

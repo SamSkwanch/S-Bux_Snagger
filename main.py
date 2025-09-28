@@ -25,7 +25,10 @@ def find_game_window():
 
 def screenshot_window(window):
     left, top, width, height = window.left, window.top, window.width, window.height
-    img = ImageGrab.grab(bbox=(left, top, left + width, top + height))
+    # Only monitor the right half of the window
+    right_half_left = left + width // 2
+    right_half_width = width // 2
+    img = ImageGrab.grab(bbox=(right_half_left, top, right_half_left + right_half_width, top + height))
     return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 
@@ -39,8 +42,9 @@ def find_sbux_locations(screenshot, template_path):
 
 
 def click_locations(window, locations):
+    # Since we only monitor the right half, offset x by half the window width
     for x, y in locations:
-        abs_x = window.left + x
+        abs_x = window.left + window.width // 2 + x
         abs_y = window.top + y
         pyautogui.click(abs_x, abs_y)
         time.sleep(0.1)

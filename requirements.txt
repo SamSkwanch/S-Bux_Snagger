@@ -1,4 +1,5 @@
 opencv-python
-pyautogui
 pillow
 pygetwindow
+numpy
+pywin32

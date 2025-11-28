@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Debug files
+debug_*.png
+
+# IDE
+.vscode/
+.idea/
+
+# Misc
+*.log

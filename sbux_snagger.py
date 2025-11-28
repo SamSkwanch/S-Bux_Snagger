@@ -1,11 +1,12 @@
 """
-S-Bux Snagger v3.0
-A tool to automatically detect and collect S-Bux in Pixel Starships.
+S-Bux Snagger v3.1 (Alert Mode)
+A tool to detect S-Bux in Pixel Starships and alert the user.
 
 Features:
 - Simple GUI with start/stop controls
 - Real-time detection feedback
 - Color-based detection for accurate S-Bux finding
+- Plays sound alert when S-Bux detected (no auto-clicking)
 - Works at any zoom level
 - Multi-monitor support
 """
@@ -25,7 +26,7 @@ import win32gui
 import win32con
 import win32api
 import win32ui
-import win32com.client
+import winsound
 from ctypes import windll
 
 
@@ -54,8 +55,11 @@ class Config:
     # How often to scan for S-Bux (seconds)
     SCAN_INTERVAL = 0.15
     
-    # Delay between clicks (seconds)
-    CLICK_DELAY = 0.1
+    # Cooldown between alerts (seconds) - prevents spam
+    ALERT_COOLDOWN = 3.0
+    
+    # Sound file path (relative to script location)
+    ALERT_SOUND = "assets/alert.wav"
     
     # S-Bux specific bright green color in HSV
     # The S-Bux border is HSV (74, 151, 254) - very distinctive
@@ -264,67 +268,29 @@ class GameInterface:
         except Exception as e:
             return None, 0, 0
     
-    def click_at(self, screen_x: int, screen_y: int):
-        """
-        Click at the specified screen coordinates.
-        Quickly switches to game, clicks, and switches back.
-        Total interruption is ~100ms, mouse position is preserved.
-        """
-        if self.hwnd is None or self.window is None:
-            return
-        
+    def play_alert(self):
+        """Play an alert sound to notify the user of S-Bux detection."""
         try:
-            # Save current mouse position
-            original_pos = win32api.GetCursorPos()
+            # Get the path to the sound file
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                base_path = sys._MEIPASS
+            else:
+                # Running as script
+                base_path = os.path.dirname(os.path.abspath(__file__))
             
-            # Get the currently active window to restore later
-            foreground_hwnd = win32gui.GetForegroundWindow()
+            sound_path = os.path.join(base_path, self.config.ALERT_SOUND)
             
-            # Use multiple methods to ensure window activation
-            # First, show/restore the window if minimized
-            win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
-            
-            # Try SetForegroundWindow with the Alt key workaround
+            if os.path.exists(sound_path):
+                # Play sound asynchronously (doesn't block)
+                winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+            else:
+                # Fallback: system beep
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            # Fallback: system beep
             try:
-                # Send Alt key to allow focus change (Windows security workaround)
-                shell = win32com.client.Dispatch("WScript.Shell")
-                shell.SendKeys('%')
-                time.sleep(0.02)
-            except:
-                pass
-            
-            # Bring window to top
-            win32gui.BringWindowToTop(self.hwnd)
-            win32gui.SetForegroundWindow(self.hwnd)
-            
-            # Wait for window to be active
-            time.sleep(0.05)
-            
-            # Move mouse to target position
-            win32api.SetCursorPos((screen_x, screen_y))
-            time.sleep(0.03)
-            
-            # Perform click
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-            time.sleep(0.03)
-            win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-            time.sleep(0.03)
-            
-            # Restore mouse position
-            win32api.SetCursorPos(original_pos)
-            
-            # Restore previous window
-            if foreground_hwnd and foreground_hwnd != self.hwnd:
-                time.sleep(0.02)
-                try:
-                    win32gui.SetForegroundWindow(foreground_hwnd)
-                except:
-                    pass
-            
-        except Exception as e:
-            # Restore mouse position even on error
-            try:
-                win32api.SetCursorPos(original_pos)
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
             except:
                 pass
 
@@ -343,16 +309,17 @@ class SBuxSnaggerApp:
         
         self.running = False
         self.scan_thread = None
-        self.total_collected = 0
-        self.session_collected = 0
+        self.total_detected = 0
+        self.session_detected = 0
         self.scan_count = 0
+        self.last_alert_time = 0  # For cooldown
         
         self._setup_gui()
     
     def _setup_gui(self):
         """Set up the main GUI window."""
         self.root = tk.Tk()
-        self.root.title("S-Bux Snagger v3.0")
+        self.root.title("S-Bux Snagger v3.1 (Alert Mode)")
         self.root.geometry("420x650")
         self.root.minsize(420, 650)
         self.root.resizable(True, True)
@@ -370,8 +337,12 @@ class SBuxSnaggerApp:
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Title
-        title_label = ttk.Label(main_frame, text="💰 S-Bux Snagger", font=("Segoe UI", 18, "bold"))
-        title_label.pack(pady=(0, 10))
+        title_label = ttk.Label(main_frame, text="� S-Bux Snagger", font=("Segoe UI", 18, "bold"))
+        title_label.pack(pady=(0, 5))
+        
+        # Subtitle - Alert Mode indicator
+        subtitle_label = ttk.Label(main_frame, text="Alert Mode - No Auto-Clicking", font=("Segoe UI", 10, "italic"))
+        subtitle_label.pack(pady=(0, 10))
         
         # Control buttons - PUT AT TOP so they're always visible
         button_frame = ttk.Frame(main_frame)
@@ -389,9 +360,9 @@ class SBuxSnaggerApp:
         stats_frame = ttk.LabelFrame(main_frame, text="Session Stats", padding=10)
         stats_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.collected_label = ttk.Label(stats_frame, text="0", style="Count.TLabel")
-        self.collected_label.pack()
-        ttk.Label(stats_frame, text="S-Bux Collected", style="Status.TLabel").pack()
+        self.detected_label = ttk.Label(stats_frame, text="0", style="Count.TLabel")
+        self.detected_label.pack()
+        ttk.Label(stats_frame, text="S-Bux Detected", style="Status.TLabel").pack()
         
         # Status frame
         status_frame = ttk.LabelFrame(main_frame, text="Status", padding=10)
@@ -433,8 +404,9 @@ class SBuxSnaggerApp:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         
         # Initial log
-        self._log("S-Bux Snagger v3.0 ready")
+        self._log("S-Bux Snagger v3.1 (Alert Mode) ready")
         self._log(f"Detection: {self.detection_engine.get_info()}")
+        self._log(f"Alert cooldown: {self.config.ALERT_COOLDOWN}s")
     
     def _log(self, message: str):
         """Add a message to the activity log."""
@@ -447,9 +419,10 @@ class SBuxSnaggerApp:
     def start(self):
         """Start the S-Bux detection."""
         self.running = True
-        self.session_collected = 0
+        self.session_detected = 0
         self.scan_count = 0
-        self.collected_label.configure(text="0")
+        self.last_alert_time = 0
+        self.detected_label.configure(text="0")
         
         self.start_button.configure(state=tk.DISABLED)
         self.stop_button.configure(state=tk.NORMAL)
@@ -469,7 +442,7 @@ class SBuxSnaggerApp:
         self.stop_button.configure(state=tk.DISABLED)
         self.status_var.set("⏹ Stopped")
         
-        self._log(f"Stopped. Collected {self.session_collected} S-Bux this session")
+        self._log(f"Stopped. Detected {self.session_detected} S-Bux this session")
     
     def _scan_loop(self):
         """Main scanning loop (runs in separate thread)."""
@@ -507,33 +480,27 @@ class SBuxSnaggerApp:
             detections = self.detection_engine.detect(screenshot)
             
             if detections:
-                count = len(detections)
-                self.root.after(0, lambda c=count: self._on_detection(c))
-                self.root.after(0, lambda: self._log(f"🎯 Detected! Clicking..."))
-                
-                # Click on each detection
-                for x, y, w, h in detections:
-                    if not self.running:
-                        break
+                current_time = time.time()
+                # Check cooldown to prevent alert spam
+                if current_time - self.last_alert_time >= self.config.ALERT_COOLDOWN:
+                    count = len(detections)
+                    self.last_alert_time = current_time
                     
-                    # Calculate screen coordinates (center of detection)
-                    screen_x = offset_x + x + w // 2
-                    screen_y = offset_y + y + h // 2
+                    self.root.after(0, lambda c=count: self._on_detection(c))
                     
-                    self.root.after(0, lambda sx=screen_x, sy=screen_y: self._log(f"   Click @ ({sx}, {sy})"))
-                    self.game_interface.click_at(screen_x, screen_y)
-                    time.sleep(self.config.CLICK_DELAY)
+                    # Play alert sound
+                    self.game_interface.play_alert()
             
             time.sleep(self.config.SCAN_INTERVAL)
     
     def _on_detection(self, count: int):
         """Called when S-Bux are detected (runs on main thread)."""
-        self.session_collected += count
-        self.total_collected += count
+        self.session_detected += count
+        self.total_detected += count
         
-        self.collected_label.configure(text=str(self.session_collected))
+        self.detected_label.configure(text=str(self.session_detected))
         self.detection_var.set(f"{count} found @ {datetime.now().strftime('%H:%M:%S')}")
-        self._log(f"💰 Collected {count} S-Bux!")
+        self._log(f"� S-Bux detected! Go collect it!")
     
     def _on_close(self):
         """Handle window close."""

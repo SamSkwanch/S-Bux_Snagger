@@ -179,7 +179,11 @@ class GameInterface:
         try:
             all_windows = gw.getAllWindows()
             for window in all_windows:
-                if self.config.GAME_WINDOW_TITLE.lower() in window.title.lower():
+                title = window.title.strip()
+                # Exact match or starts with the game title (handles "Pixel Starships" and "Pixel Starships - ...")
+                # This prevents matching browser tabs that contain the title mid-string
+                if title.lower() == self.config.GAME_WINDOW_TITLE.lower() or \
+                   title.lower().startswith(self.config.GAME_WINDOW_TITLE.lower()):
                     self.window = window
                     self.last_window_info = f'"{window.title}" ({window.width}x{window.height})'
                     # Get the Windows handle for background clicking

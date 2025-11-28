@@ -31,7 +31,10 @@ MAX_CONTOUR_AREA = 3000   # Maximum to avoid large text blocks
 def find_game_window():
     all_windows = gw.getAllWindows()
     for window in all_windows:
-        if GAME_WINDOW_TITLE.lower() in window.title.lower():
+        title = window.title.strip()
+        # Exact match or starts with the game title (avoids matching browser tabs)
+        if title.lower() == GAME_WINDOW_TITLE.lower() or \
+           title.lower().startswith(GAME_WINDOW_TITLE.lower()):
             return window
     return None
 
